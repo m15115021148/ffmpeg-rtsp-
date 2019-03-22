@@ -50,7 +50,8 @@ include $(PREBUILT_SHARED_LIBRARY)
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := cubic
-LOCAL_SRC_FILES := coreApp.cpp
+LOCAL_SRC_FILES := coreApp.cpp \
+			WlListener.cpp
 
 
 LOCAL_SHARED_LIBRARIES  := libavcodec-56 \

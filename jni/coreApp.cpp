@@ -1,6 +1,8 @@
 #include <jni.h>
 #include <stdio.h>
 #include "android_log.h"
+#include "pthread.h"
+#include "WlListener.h"
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -21,8 +23,30 @@ extern "C" {
 #endif //CUBIC_LOG_TAG
 #define CUBIC_LOG_TAG  "OpenCV"
 
+pthread_t callbackThread;
+
+void *callBackT(void *data)
+{
+    //获取WlListener指针
+    WlListener *wlListener = (WlListener *) data;
+    //在子线程中调用回调方法
+    wlListener->onCallBack(1, 200, "Child thread running success!");
+    pthread_exit(&callbackThread);
+}
+
+JavaVM* jvm;
+
+JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm,void* reserved){
+    JNIEnv *env;
+    jvm = vm;
+    if(vm->GetEnv((void**)&env,JNI_VERSION_1_6)!=JNI_OK){
+        return -1;
+    }
+    return JNI_VERSION_1_6;
+}
+
 extern "C"
-JNIEXPORT jint JNICALL Java_com_geek_ffmpegtest1_FFmpegUtil_open(JNIEnv *env,
+JNIEXPORT jint JNICALL Java_com_ffmpeg_FFmpegUtil_open(JNIEnv *env,
         jclass obj, jstring url_,jint duration) {
 			
 	char url[500]={0};
@@ -154,24 +178,26 @@ JNIEXPORT jint JNICALL Java_com_geek_ffmpegtest1_FFmpegUtil_open(JNIEnv *env,
     AVPacket packet;
     int i, frameFinished;
     i = 0;
-	LOGD("av_read_frame-->%d",av_read_frame(pFormatCtx, &packet));
+	
+	WlListener *wlListener = new WlListener(jvm, env, env->NewGlobalRef(obj));
+	
     while (av_read_frame(pFormatCtx, &packet) >= 0) {
         // Is this a packet from the video stream?
         if (packet.stream_index == videoStream) {
-			LOGD("packet.stream_index == videoStream");
             // Decode video frame
             avcodec_decode_video2(pCodecCtx, pFrame, &frameFinished, &packet);
             
             // Did we get a video frame?
             if (frameFinished) {
-				LOGD("frameFinished");
                 // Convert the image from its native format to RGB.
                 sws_scale(sws_ctx, (uint8_t const * const *) pFrame->data, pFrame->linesize, 0, pCodecCtx->height, pFrameRGB->data, pFrameRGB->linesize);
                 
                 // Save the frame to disk.
                 if (1) {
 					LOGD("DATA-->");
-//                    SaveFrame(pFrameRGB, pCodecCtx->width, pCodecCtx->height, i, outPath);
+					wlListener->onCallBack(0, 100, "JNIENV thread running success!");
+					//开启子线程，并把WlListener指针传递到子线程中
+					pthread_create(&callbackThread, NULL, callBackT, wlListener);
                  
                 }
             }
@@ -181,7 +207,6 @@ JNIEXPORT jint JNICALL Java_com_geek_ffmpegtest1_FFmpegUtil_open(JNIEnv *env,
         //av_free_packet(&packet); // Deprecated.
         av_packet_unref(&packet);
     }
-    LOGD("av_read_frame- end----------------->");
     sws_freeContext(sws_ctx);
     
     // Free the RGB image.
